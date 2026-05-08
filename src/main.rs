@@ -1,11 +1,46 @@
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
+use std::collections::VecDeque;
+
+#[derive(Clone, Copy)]
+enum MoveFace {
+    R,
+    L,
+    U,
+    F,
+    B,
+    D,
+}
+
+#[derive(Clone, Copy)]
+struct Move {
+    face: MoveFace,
+    is_prime: bool,
+}
+
+impl Move {
+    pub fn new(face: MoveFace, is_prime: bool) -> Self {
+        Self { face, is_prime }
+    }
+}
+
+#[derive(Resource, Default)]
+struct MoveQueue {
+    queue: VecDeque<Move>,
+    active: Option<ActiveMove>,
+}
+
+struct ActiveMove {
+    move_type: Move,
+    rotated: f32,
+}
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<OrbitState>()
+        .init_resource::<MoveQueue>()
         .add_systems(Startup, setup)
         .add_systems(Update, (orbit_camera, turn_faces))
         .run();
@@ -184,17 +219,158 @@ fn turn_faces(
     mut cubes: Query<&mut Transform, Without<Camera3d>>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    mut moves: ResMut<MoveQueue>,
 ) {
-    if !keys.pressed(KeyCode::KeyR) {
-        return;
+    // Queue new moves
+    if keys.just_pressed(KeyCode::KeyR) {
+        moves.queue.push_back(Move::new(
+            MoveFace::R,
+            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        ));
     }
 
-    let angle = 1.0_f32.to_radians() * 60.0 * time.delta_secs();
+    if keys.just_pressed(KeyCode::KeyL) {
+        moves.queue.push_back(Move::new(
+            MoveFace::L,
+            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        ));
+    }
 
-    for mut transform in &mut cubes {
-        // Right face (+X layer)
-        if transform.translation.x > 0.9 {
-            transform.rotate_around(Vec3::ZERO, Quat::from_rotation_x(-angle));
+    if keys.just_pressed(KeyCode::KeyU) {
+        moves.queue.push_back(Move::new(
+            MoveFace::U,
+            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        ));
+    }
+
+    if keys.just_pressed(KeyCode::KeyD) {
+        moves.queue.push_back(Move::new(
+            MoveFace::D,
+            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        ));
+    }
+
+    if keys.just_pressed(KeyCode::KeyF) {
+        moves.queue.push_back(Move::new(
+            MoveFace::F,
+            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        ));
+    }
+
+    if keys.just_pressed(KeyCode::KeyB) {
+        moves.queue.push_back(Move::new(
+            MoveFace::B,
+            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
+        ));
+    }
+
+    // Start next move if idle
+    if moves.active.is_none() {
+        if let Some(next_move) = moves.queue.pop_front() {
+            moves.active = Some(ActiveMove {
+                move_type: next_move,
+                rotated: 0.0,
+            });
         }
+    }
+    let Some(active) = &mut moves.active else {
+        return;
+    };
+
+    let speed = 180.0_f32.to_radians(); // degrees/sec
+    let mut step = speed * time.delta_secs();
+
+    let remaining = 90.0_f32.to_radians() - active.rotated;
+
+    // Prevent overshoot
+    if step > remaining {
+        step = remaining;
+    }
+
+    match active.move_type {
+        Move {
+            face: MoveFace::R,
+            is_prime,
+        } => {
+            let dir = if is_prime { 1.0 } else { -1.0 };
+
+            for mut transform in &mut cubes {
+                if transform.translation.x > 0.9 {
+                    transform.rotate_around(Vec3::ZERO, Quat::from_rotation_x(dir * step));
+                }
+            }
+        }
+
+        Move {
+            face: MoveFace::L,
+            is_prime,
+        } => {
+            let dir = if is_prime { -1.0 } else { 1.0 };
+
+            for mut transform in &mut cubes {
+                if transform.translation.x < -0.9 {
+                    transform.rotate_around(Vec3::ZERO, Quat::from_rotation_x(dir * step));
+                }
+            }
+        }
+
+        Move {
+            face: MoveFace::U,
+            is_prime,
+        } => {
+            let dir = if is_prime { 1.0 } else { -1.0 };
+
+            for mut transform in &mut cubes {
+                if transform.translation.y > 0.9 {
+                    transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(dir * step));
+                }
+            }
+        }
+
+        Move {
+            face: MoveFace::D,
+            is_prime,
+        } => {
+            let dir = if is_prime { -1.0 } else { 1.0 };
+
+            for mut transform in &mut cubes {
+                if transform.translation.y < -0.9 {
+                    transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(dir * step));
+                }
+            }
+        }
+
+        Move {
+            face: MoveFace::F,
+            is_prime,
+        } => {
+            let dir = if is_prime { 1.0 } else { -1.0 };
+
+            for mut transform in &mut cubes {
+                if transform.translation.z > 0.9 {
+                    transform.rotate_around(Vec3::ZERO, Quat::from_rotation_z(dir * step));
+                }
+            }
+        }
+
+        Move {
+            face: MoveFace::B,
+            is_prime,
+        } => {
+            let dir = if is_prime { -1.0 } else { 1.0 };
+
+            for mut transform in &mut cubes {
+                if transform.translation.z < -0.9 {
+                    transform.rotate_around(Vec3::ZERO, Quat::from_rotation_z(dir * step));
+                }
+            }
+        }
+    }
+
+    active.rotated += step;
+
+    // Move complete
+    if active.rotated >= 90.0_f32.to_radians() - 0.0001 {
+        moves.active = None;
     }
 }
