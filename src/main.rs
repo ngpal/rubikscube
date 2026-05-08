@@ -7,7 +7,7 @@ fn main() {
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<OrbitState>()
         .add_systems(Startup, setup)
-        .add_systems(Update, orbit_camera)
+        .add_systems(Update, (orbit_camera, turn_faces))
         .run();
 }
 
@@ -29,9 +29,7 @@ fn setup(
                 let pos = Vec3::new(i as f32, j as f32, k as f32);
 
                 let cube_material = materials.add(Color::BLACK);
-                let sticker_material = materials.add(Color::WHITE);
 
-                // Spawn parent cubelet
                 commands
                     .spawn((Transform::from_translation(pos), Visibility::default()))
                     .with_children(|parent| {
@@ -80,7 +78,7 @@ fn setup(
                                     sticker_depth,
                                     sticker_size,
                                 ))),
-                                MeshMaterial3d(sticker_material.clone()),
+                                MeshMaterial3d(materials.add(Color::WHITE)),
                                 Transform::from_xyz(0.0, offset, 0.0),
                             ));
                         }
@@ -180,4 +178,23 @@ fn orbit_camera(
 
     transform.translation = Vec3::new(x, y, z);
     transform.look_at(Vec3::ZERO, Vec3::Y);
+}
+
+fn turn_faces(
+    mut cubes: Query<&mut Transform, Without<Camera3d>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
+    if !keys.pressed(KeyCode::KeyR) {
+        return;
+    }
+
+    let angle = 1.0_f32.to_radians() * 60.0 * time.delta_secs();
+
+    for mut transform in &mut cubes {
+        // Right face (+X layer)
+        if transform.translation.x > 0.9 {
+            transform.rotate_around(Vec3::ZERO, Quat::from_rotation_x(-angle));
+        }
+    }
 }
