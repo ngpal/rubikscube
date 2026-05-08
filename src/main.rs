@@ -26,11 +26,104 @@ fn setup(
     for i in -1..=1 {
         for j in -1..=1 {
             for k in -1..=1 {
-                commands.spawn((
-                    Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-                    MeshMaterial3d(materials.add(Color::srgb(0.2, 0.2, 0.2))),
-                    Transform::from_xyz(i as f32 * 1.1, j as f32 * 1.1, k as f32 * 1.1),
-                ));
+                let pos = Vec3::new(i as f32, j as f32, k as f32);
+
+                let cube_material = materials.add(Color::BLACK);
+                let sticker_material = materials.add(Color::WHITE);
+
+                // Spawn parent cubelet
+                commands
+                    .spawn((Transform::from_translation(pos), Visibility::default()))
+                    .with_children(|parent| {
+                        // Main cube body
+                        parent.spawn((
+                            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+                            MeshMaterial3d(cube_material.clone()),
+                            Transform::default(),
+                        ));
+
+                        let sticker_size = 0.85;
+                        let sticker_depth = 0.05;
+                        let offset = 0.5;
+
+                        // +X
+                        if i == 1 {
+                            parent.spawn((
+                                Mesh3d(meshes.add(Cuboid::new(
+                                    sticker_depth,
+                                    sticker_size,
+                                    sticker_size,
+                                ))),
+                                MeshMaterial3d(materials.add(Color::srgb(1.0, 0.0, 0.0))),
+                                Transform::from_xyz(offset, 0.0, 0.0),
+                            ));
+                        }
+
+                        // -X
+                        if i == -1 {
+                            parent.spawn((
+                                Mesh3d(meshes.add(Cuboid::new(
+                                    sticker_depth,
+                                    sticker_size,
+                                    sticker_size,
+                                ))),
+                                MeshMaterial3d(materials.add(Color::srgb(1.0, 0.5, 0.0))),
+                                Transform::from_xyz(-offset, 0.0, 0.0),
+                            ));
+                        }
+
+                        // +Y
+                        if j == 1 {
+                            parent.spawn((
+                                Mesh3d(meshes.add(Cuboid::new(
+                                    sticker_size,
+                                    sticker_depth,
+                                    sticker_size,
+                                ))),
+                                MeshMaterial3d(sticker_material.clone()),
+                                Transform::from_xyz(0.0, offset, 0.0),
+                            ));
+                        }
+
+                        // -Y
+                        if j == -1 {
+                            parent.spawn((
+                                Mesh3d(meshes.add(Cuboid::new(
+                                    sticker_size,
+                                    sticker_depth,
+                                    sticker_size,
+                                ))),
+                                MeshMaterial3d(materials.add(Color::srgb(1., 1., 0.))),
+                                Transform::from_xyz(0.0, -offset, 0.0),
+                            ));
+                        }
+
+                        // +Z
+                        if k == 1 {
+                            parent.spawn((
+                                Mesh3d(meshes.add(Cuboid::new(
+                                    sticker_size,
+                                    sticker_size,
+                                    sticker_depth,
+                                ))),
+                                MeshMaterial3d(materials.add(Color::srgb(0.0, 1.0, 0.0))),
+                                Transform::from_xyz(0.0, 0.0, offset),
+                            ));
+                        }
+
+                        // -Z
+                        if k == -1 {
+                            parent.spawn((
+                                Mesh3d(meshes.add(Cuboid::new(
+                                    sticker_size,
+                                    sticker_size,
+                                    sticker_depth,
+                                ))),
+                                MeshMaterial3d(materials.add(Color::srgb(0.0, 0.0, 1.0))),
+                                Transform::from_xyz(0.0, 0.0, -offset),
+                            ));
+                        }
+                    });
             }
         }
     }
