@@ -1,28 +1,10 @@
-use bevy::input::mouse::AccumulatedMouseMotion;
+mod cube;
+
 use bevy::prelude::*;
+use bevy::{input::mouse::AccumulatedMouseMotion, window::WindowResolution};
 use std::collections::VecDeque;
 
-#[derive(Clone, Copy)]
-enum MoveFace {
-    R,
-    L,
-    U,
-    F,
-    B,
-    D,
-}
-
-#[derive(Clone, Copy)]
-struct Move {
-    face: MoveFace,
-    is_prime: bool,
-}
-
-impl Move {
-    pub fn new(face: MoveFace, is_prime: bool) -> Self {
-        Self { face, is_prime }
-    }
-}
+use crate::cube::{Cube, Move, MoveFace};
 
 #[derive(Resource, Default)]
 struct MoveQueue {
@@ -37,12 +19,21 @@ struct ActiveMove {
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Rubik's Cube".into(),
+                resolution: WindowResolution::new(600, 600),
+                resizable: true,
+                ..default()
+            }),
+            ..default()
+        }))
         .insert_resource(ClearColor(Color::BLACK))
         .init_resource::<OrbitState>()
         .init_resource::<MoveQueue>()
+        .init_resource::<Cube>()
         .add_systems(Startup, setup)
-        .add_systems(Update, (orbit_camera, turn_faces))
+        .add_systems(Update, (orbit_camera, handle_input, execute_moves))
         .run();
 }
 
@@ -50,6 +41,14 @@ fn main() {
 struct OrbitState {
     yaw: f32,
     pitch: f32,
+}
+
+#[allow(unused)]
+fn edges_info(mut cube: ResMut<Cube>) {
+    for i in 0..12 {
+        let edge = cube.get_edge(i);
+        info!("Edge {:X} = {:0>2X}", i, edge)
+    }
 }
 
 fn setup(
@@ -215,56 +214,42 @@ fn orbit_camera(
     transform.look_at(Vec3::ZERO, Vec3::Y);
 }
 
-fn turn_faces(
-    mut cubes: Query<&mut Transform, Without<Camera3d>>,
+fn handle_input(
     keys: Res<ButtonInput<KeyCode>>,
+    mut moves: ResMut<MoveQueue>,
+    mut cube: ResMut<Cube>,
+) {
+    let prime = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+
+    let face = if keys.just_pressed(KeyCode::KeyR) {
+        Some(MoveFace::R)
+    } else if keys.just_pressed(KeyCode::KeyL) {
+        Some(MoveFace::L)
+    } else if keys.just_pressed(KeyCode::KeyU) {
+        Some(MoveFace::U)
+    } else if keys.just_pressed(KeyCode::KeyD) {
+        Some(MoveFace::D)
+    } else if keys.just_pressed(KeyCode::KeyF) {
+        Some(MoveFace::F)
+    } else if keys.just_pressed(KeyCode::KeyB) {
+        Some(MoveFace::B)
+    } else {
+        None
+    };
+
+    if let Some(face) = face {
+        let m = Move::new(face, prime, false);
+        moves.queue.push_back(m);
+        cube.make_move(m);
+        edges_info(cube);
+    }
+}
+
+fn execute_moves(
+    mut cubes: Query<&mut Transform, Without<Camera3d>>,
     time: Res<Time>,
     mut moves: ResMut<MoveQueue>,
 ) {
-    // Queue new moves
-    if keys.just_pressed(KeyCode::KeyR) {
-        moves.queue.push_back(Move::new(
-            MoveFace::R,
-            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::KeyL) {
-        moves.queue.push_back(Move::new(
-            MoveFace::L,
-            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::KeyU) {
-        moves.queue.push_back(Move::new(
-            MoveFace::U,
-            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::KeyD) {
-        moves.queue.push_back(Move::new(
-            MoveFace::D,
-            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::KeyF) {
-        moves.queue.push_back(Move::new(
-            MoveFace::F,
-            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        ));
-    }
-
-    if keys.just_pressed(KeyCode::KeyB) {
-        moves.queue.push_back(Move::new(
-            MoveFace::B,
-            keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight),
-        ));
-    }
-
-    // Start next move if idle
     if moves.active.is_none() {
         if let Some(next_move) = moves.queue.pop_front() {
             moves.active = Some(ActiveMove {
@@ -273,16 +258,15 @@ fn turn_faces(
             });
         }
     }
+
     let Some(active) = &mut moves.active else {
         return;
     };
 
-    let speed = 180.0_f32.to_radians(); // degrees/sec
+    let speed = 180.0_f32.to_radians();
     let mut step = speed * time.delta_secs();
-
     let remaining = 90.0_f32.to_radians() - active.rotated;
 
-    // Prevent overshoot
     if step > remaining {
         step = remaining;
     }
@@ -291,74 +275,105 @@ fn turn_faces(
         Move {
             face: MoveFace::R,
             is_prime,
+            is_double,
         } => {
-            let dir = if is_prime { 1.0 } else { -1.0 };
-
+            let dir = if is_prime {
+                1.0
+            } else if is_double {
+                -2.0
+            } else {
+                -1.0
+            };
             for mut transform in &mut cubes {
                 if transform.translation.x > 0.9 {
                     transform.rotate_around(Vec3::ZERO, Quat::from_rotation_x(dir * step));
                 }
             }
         }
-
         Move {
             face: MoveFace::L,
             is_prime,
+            is_double,
         } => {
-            let dir = if is_prime { -1.0 } else { 1.0 };
-
+            let dir = if is_prime {
+                -1.0
+            } else if is_double {
+                2.0
+            } else {
+                1.0
+            };
             for mut transform in &mut cubes {
                 if transform.translation.x < -0.9 {
                     transform.rotate_around(Vec3::ZERO, Quat::from_rotation_x(dir * step));
                 }
             }
         }
-
         Move {
             face: MoveFace::U,
             is_prime,
+            is_double,
         } => {
-            let dir = if is_prime { 1.0 } else { -1.0 };
-
+            let dir = if is_prime {
+                1.0
+            } else if is_double {
+                -2.0
+            } else {
+                -1.0
+            };
             for mut transform in &mut cubes {
                 if transform.translation.y > 0.9 {
                     transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(dir * step));
                 }
             }
         }
-
         Move {
             face: MoveFace::D,
             is_prime,
+            is_double,
         } => {
-            let dir = if is_prime { -1.0 } else { 1.0 };
-
+            let dir = if is_prime {
+                -1.0
+            } else if is_double {
+                2.0
+            } else {
+                1.0
+            };
             for mut transform in &mut cubes {
                 if transform.translation.y < -0.9 {
                     transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(dir * step));
                 }
             }
         }
-
         Move {
             face: MoveFace::F,
             is_prime,
+            is_double,
         } => {
-            let dir = if is_prime { 1.0 } else { -1.0 };
-
+            let dir = if is_prime {
+                1.0
+            } else if is_double {
+                -2.0
+            } else {
+                -1.0
+            };
             for mut transform in &mut cubes {
                 if transform.translation.z > 0.9 {
                     transform.rotate_around(Vec3::ZERO, Quat::from_rotation_z(dir * step));
                 }
             }
         }
-
         Move {
             face: MoveFace::B,
             is_prime,
+            is_double,
         } => {
-            let dir = if is_prime { -1.0 } else { 1.0 };
-
+            let dir = if is_prime {
+                -1.0
+            } else if is_double {
+                2.0
+            } else {
+                1.0
+            };
             for mut transform in &mut cubes {
                 if transform.translation.z < -0.9 {
                     transform.rotate_around(Vec3::ZERO, Quat::from_rotation_z(dir * step));
@@ -369,7 +384,6 @@ fn turn_faces(
 
     active.rotated += step;
 
-    // Move complete
     if active.rotated >= 90.0_f32.to_radians() - 0.0001 {
         moves.active = None;
     }
